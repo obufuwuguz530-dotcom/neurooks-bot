@@ -2,9 +2,10 @@ import os
 import json
 import asyncio
 import logging
+from datetime import datetime
 from dotenv import load_dotenv
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
+from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 from telegram.error import TelegramError
 
 from keywords import KEYWORDS
@@ -12,6 +13,7 @@ from keywords import KEYWORDS
 load_dotenv()
 TOKEN = os.getenv("BOT_TOKEN")
 CHANNEL = "@neirogide"
+OWNER_ID = 415652620
 SEEN_USERS_FILE = "seen_users.json"
 DELAY_MINUTES = 40
 
@@ -62,6 +64,25 @@ async def is_subscribed(user_id: int, bot) -> bool:
         return False
 
 
+async def notify_owner(bot, user, keyword: str, subscribed: bool, got_content: bool):
+    username = f"@{user.username}" if user.username else f"{user.first_name} (id: {user.id})"
+    now = datetime.now().strftime("%d %b, %H:%M")
+    sub_icon = "✅" if subscribed else "❌"
+    content_icon = "📎" if got_content else "⏳"
+
+    text = (
+        f"👤 {username}\n"
+        f"📅 {now}\n"
+        f"🔑 Кодовое слово: {keyword}\n"
+        f"{sub_icon} Подписан на канал\n"
+        f"{content_icon} Материал получил"
+    )
+    try:
+        await bot.send_message(chat_id=OWNER_ID, text=text)
+    except TelegramError:
+        pass
+
+
 async def send_content(message, keyword: str):
     link = KEYWORDS.get(keyword)
     if link:
@@ -107,8 +128,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         seen_users.add(user.id)
         save_seen_users(seen_users)
 
-    if await is_subscribed(user.id, context.bot):
+    subscribed = await is_subscribed(user.id, context.bot)
+
+    if subscribed:
         await send_content(update.message, keyword)
+        await notify_owner(context.bot, user, keyword, subscribed=True, got_content=True)
         if is_first_visit:
             asyncio.create_task(send_followup(context.bot, update.effective_chat.id))
     else:
@@ -116,6 +140,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Чтобы получить материал — подпишись на канал и нажми кнопку ниже 👇",
             reply_markup=subscription_keyboard(keyword)
         )
+        await notify_owner(context.bot, user, keyword, subscribed=False, got_content=False)
 
 
 async def check_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -128,9 +153,23 @@ async def check_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if await is_subscribed(user.id, context.bot):
         await query.message.delete()
         await send_content(query.message, keyword)
+        await notify_owner(context.bot, user, keyword, subscribed=True, got_content=True)
         asyncio.create_task(send_followup(context.bot, query.message.chat.id))
     else:
         await query.answer("Ты ещё не подписался на канал 😔", show_alert=True)
+
+
+async def forward_to_owner(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    if user.id == OWNER_ID:
+        return
+
+    username = f"@{user.username}" if user.username else f"{user.first_name} (id: {user.id})"
+    text = f"💬 Сообщение от {username}:\n\n{update.message.text}"
+    try:
+        await context.bot.send_message(chat_id=OWNER_ID, text=text)
+    except TelegramError:
+        pass
 
 
 async def main():
@@ -140,6 +179,7 @@ async def main():
     app = ApplicationBuilder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(check_button, pattern=r"^check_"))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, forward_to_owner))
 
     print("Бот запущен...")
     async with app:
