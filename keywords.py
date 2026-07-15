@@ -7,5 +7,5 @@ KEYWORDS = {
     "rutina":  "https://ВСТАВЬ_ССЫЛКУ",
     "cowork":  "https://ВСТАВЬ_ССЫЛКУ",
     "claude":  "https://ВСТАВЬ_ССЫЛКУ",
-    "5":       "https://ВСТАВЬ_ССЫЛКУ",
+    "5":       "https://t.me/neirogide/2065",
 }
