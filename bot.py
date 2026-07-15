@@ -15,6 +15,7 @@ TOKEN = os.getenv("BOT_TOKEN")
 CHANNEL = "@neirogide"
 OWNER_ID = 415652620
 SEEN_USERS_FILE = "seen_users.json"
+REPLIES_FILE = "replies_map.json"
 DELAY_MINUTES = 40
 
 WELCOME_TEXT = (
@@ -54,6 +55,19 @@ def save_seen_users(users: set):
 
 
 seen_users = load_seen_users()
+
+# message_id сообщения владельцу → chat_id пользователя
+def load_replies_map() -> dict:
+    if os.path.exists(REPLIES_FILE):
+        with open(REPLIES_FILE, "r") as f:
+            return {int(k): int(v) for k, v in json.load(f).items()}
+    return {}
+
+def save_replies_map(m: dict):
+    with open(REPLIES_FILE, "w") as f:
+        json.dump(m, f)
+
+replies_map = load_replies_map()
 
 
 async def is_subscribed(user_id: int, bot) -> bool:
@@ -161,13 +175,25 @@ async def check_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def forward_to_owner(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
+
+    # Если пишет владелец — проверяем, не ответ ли это на чужое сообщение
     if user.id == OWNER_ID:
+        reply = update.message.reply_to_message
+        if reply and reply.message_id in replies_map:
+            user_chat_id = replies_map[reply.message_id]
+            try:
+                await context.bot.send_message(chat_id=user_chat_id, text=update.message.text)
+                await update.message.reply_text("✅ Ответ отправлен")
+            except TelegramError:
+                await update.message.reply_text("❌ Не удалось отправить ответ")
         return
 
     username = f"@{user.username}" if user.username else f"{user.first_name} (id: {user.id})"
-    text = f"💬 Сообщение от {username}:\n\n{update.message.text}"
+    text = f"💬 Сообщение от {username}:\n\n{update.message.text}\n\n_(Ответь на это сообщение, чтобы написать пользователю)_"
     try:
-        await context.bot.send_message(chat_id=OWNER_ID, text=text)
+        sent = await context.bot.send_message(chat_id=OWNER_ID, text=text, parse_mode="Markdown")
+        replies_map[sent.message_id] = update.effective_chat.id
+        save_replies_map(replies_map)
     except TelegramError:
         pass
 
