@@ -9,4 +9,5 @@ KEYWORDS = {
     "cowork":  "https://ВСТАВЬ_ССЫЛКУ",
     "claude":  "https://ВСТАВЬ_ССЫЛКУ",
     "5":       "https://t.me/neirogide/2065",
+    "prof":    "https://t.me/neirogide/2065",
 }
