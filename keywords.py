@@ -3,6 +3,7 @@
 
 KEYWORDS = {
     "gaid":    "https://t.me/neirogide/2061",
+    "start":   "https://t.me/neirogide/2061",
     "ohvat":   "https://ВСТАВЬ_ССЫЛКУ",
     "rutina":  "https://ВСТАВЬ_ССЫЛКУ",
     "cowork":  "https://ВСТАВЬ_ССЫЛКУ",
