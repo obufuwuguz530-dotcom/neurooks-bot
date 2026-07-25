@@ -9,6 +9,7 @@ KEYWORDS = {
     "cowork":  "https://ВСТАВЬ_ССЫЛКУ",
     "claude":  "https://t.me/neirogide/2073",
     "omni":    "https://t.me/neirogide/2074",
+    "montaj":  "https://t.me/neirogide/2078",
     "5":       "https://t.me/neirogide/2065",
     "prof":    "https://t.me/neirogide/2065",
 }
