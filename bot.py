@@ -36,6 +36,28 @@ FOLLOWUP_KEYBOARD = InlineKeyboardMarkup([
     [InlineKeyboardButton("Собрать ИИ-сотрудника", url="https://aiworkercont.vercel.app/")]
 ])
 
+BUTTON_LABELS = {
+    "gaid":   "Установка Claude Code",
+    "start":  "Установка Claude Code",
+    "kod":    "Установка Claude Code",
+    "5":      "5 фишек для профи",
+    "prof":   "5 фишек для профи",
+    "claude": "Гайд по Claude",
+    "omni":   "Omni-режим",
+    "montaj": "Монтаж видео",
+}
+
+MORE_GUIDES = {
+    "gaid":   ["omni", "claude", "montaj"],
+    "start":  ["omni", "claude", "montaj"],
+    "kod":    ["omni", "claude", "montaj"],
+    "5":      ["omni", "montaj", "kod"],
+    "prof":   ["omni", "montaj", "kod"],
+    "claude": ["prof", "omni", "montaj"],
+    "omni":   ["montaj", "prof", "claude"],
+    "montaj": ["omni", "prof", "claude"],
+}
+
 logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(message)s",
     level=logging.INFO
@@ -97,12 +119,27 @@ async def notify_owner(bot, user, keyword: str, subscribed: bool, got_content: b
         pass
 
 
+def more_guides_keyboard(current_keyword: str) -> InlineKeyboardMarkup | None:
+    others = MORE_GUIDES.get(current_keyword)
+    if not others:
+        return None
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton(BUTTON_LABELS[k], callback_data=f"guide_{k}")]
+        for k in others
+    ])
+
+
 async def send_content(message, keyword: str):
     link = KEYWORDS.get(keyword)
-    if link:
-        await message.reply_text(f"Держи материал 👉 {link}")
-    else:
+    if not link:
         await message.reply_text("Не знаю такого кодового слова.")
+        return
+
+    await message.reply_text(f"Держи материал 👉 {link}")
+
+    keyboard = more_guides_keyboard(keyword)
+    if keyboard:
+        await message.reply_text("Забери ещё 3 гайда 👇", reply_markup=keyboard)
 
 
 async def send_followup(bot, chat_id: int):
@@ -173,6 +210,15 @@ async def check_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.answer("Ты ещё не подписался на канал 😔", show_alert=True)
 
 
+async def guide_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    keyword = query.data.replace("guide_", "")
+    await send_content(query.message, keyword)
+    await notify_owner(context.bot, query.from_user, keyword, subscribed=True, got_content=True)
+
+
 async def forward_to_owner(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
 
@@ -205,6 +251,7 @@ async def main():
     app = ApplicationBuilder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(check_button, pattern=r"^check_"))
+    app.add_handler(CallbackQueryHandler(guide_button, pattern=r"^guide_"))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, forward_to_owner))
 
     print("Бот запущен...")
