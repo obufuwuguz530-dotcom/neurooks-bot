@@ -104,6 +104,28 @@ CONTENT_TAIL = (
     "пока горячо, иначе отложится на «потом» и не вернётся."
 )
 
+DAY_FOLLOWUP_HOURS = 24
+
+MATERIAL_SHORT = {
+    "kod":     "Claude Code",
+    "gaid":    "Claude Code",
+    "start":   "Claude Code",
+    "code":    "Claude Code",
+    "montaj":  "автомонтажа",
+    "montage": "автомонтажа",
+    "omni":    "Omni",
+    "claude":  "Claude",
+    "prof":    "разбора 5 профессий 2027",
+    "5":       "разбора 5 профессий 2027",
+    "promts":  "7 промптов",
+}
+
+DAY_FU_RESPONSES = {
+    "ok":     "Круто! Скинь результат в личку @milakhweb — это ваши будущие отзывы 🙌",
+    "stuck":  "Напиши мне лично @milakhweb — разберёмся, я через это сама прошла.",
+    "notyet": "Оставь себе 15 минут вечером. Реально столько и нужно.",
+}
+
 logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(message)s",
     level=logging.INFO
@@ -199,11 +221,35 @@ async def send_content(message, keyword: str):
 
 async def send_followup(bot, chat_id: int):
     await asyncio.sleep(DELAY_MINUTES * 60)
-    await bot.send_message(
-        chat_id=chat_id,
-        text=FOLLOWUP_TEXT,
-        reply_markup=FOLLOWUP_KEYBOARD
-    )
+    try:
+        await bot.send_message(
+            chat_id=chat_id,
+            text=FOLLOWUP_TEXT,
+            reply_markup=FOLLOWUP_KEYBOARD
+        )
+    except TelegramError:
+        pass
+
+
+def day_followup_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("Получилось", callback_data="fu_ok")],
+        [InlineKeyboardButton("Застряла на установке", callback_data="fu_stuck")],
+        [InlineKeyboardButton("Ещё не пробовала", callback_data="fu_notyet")],
+    ])
+
+
+async def send_day_followup(bot, chat_id: int, keyword: str):
+    await asyncio.sleep(DAY_FOLLOWUP_HOURS * 3600)
+    short = MATERIAL_SHORT.get(keyword, "материала")
+    try:
+        await bot.send_message(
+            chat_id=chat_id,
+            text=f"Ну как, дошли руки до {short}? 🙂",
+            reply_markup=day_followup_keyboard()
+        )
+    except TelegramError:
+        pass
 
 
 def subscription_keyboard(keyword: str) -> InlineKeyboardMarkup:
@@ -226,6 +272,7 @@ async def deliver_or_prompt(message, user, keyword: str, bot, is_first_visit: bo
     if subscribed:
         await send_content(message, keyword)
         await notify_owner(bot, user, keyword, subscribed=True, got_content=True)
+        asyncio.create_task(send_day_followup(bot, message.chat.id, keyword))
         if is_first_visit:
             asyncio.create_task(send_followup(bot, message.chat.id))
     else:
@@ -292,6 +339,7 @@ async def check_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             pass
         await send_content(query.message, keyword)
         await notify_owner(context.bot, user, keyword, subscribed=True, got_content=True)
+        asyncio.create_task(send_day_followup(context.bot, query.message.chat.id, keyword))
         asyncio.create_task(send_followup(context.bot, query.message.chat.id))
     else:
         try:
@@ -328,6 +376,19 @@ async def guide_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Держи: {link}\n\nЗабирай ещё, если что-то приглянулось 👆"
     )
     await notify_owner(context.bot, query.from_user, keyword, subscribed=True, got_content=True)
+    asyncio.create_task(send_day_followup(context.bot, query.message.chat.id, keyword))
+
+
+async def day_followup_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    action = query.data.replace("fu_", "")
+    response = DAY_FU_RESPONSES.get(action)
+    if not response:
+        return
+
+    await query.message.reply_text(response)
 
 
 async def forward_to_owner(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -365,6 +426,7 @@ async def main():
     app.add_handler(CallbackQueryHandler(pick_button, pattern=r"^pick_"))
     app.add_handler(CallbackQueryHandler(more_guides_button, pattern=r"^more_guides$"))
     app.add_handler(CallbackQueryHandler(guide_button, pattern=r"^guide_"))
+    app.add_handler(CallbackQueryHandler(day_followup_button, pattern=r"^fu_"))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, forward_to_owner))
 
     print("Бот запущен...")
