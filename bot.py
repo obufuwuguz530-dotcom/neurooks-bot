@@ -18,10 +18,36 @@ SEEN_USERS_FILE = "seen_users.json"
 REPLIES_FILE = "replies_map.json"
 DELAY_MINUTES = 40
 
-WELCOME_TEXT = (
-    "Привет! Я Смартик — заведую канцелярией ИИ и выдаю полезные материалы. "
-    "Лови свой подарок 🎁"
+WELCOME_INTRO = "Привет! Я Смартик — заведую канцелярией ИИ и выдаю полезные материалы."
+
+WELCOME_LINES = {
+    "omni":    "Хочешь инструкцию по Omni — отлично.",
+    "kod":     "Хочешь инструкцию по установке Claude Code — то самое место.",
+    "gaid":    "Хочешь инструкцию по установке Claude Code — то самое место.",
+    "start":   "Хочешь инструкцию по установке Claude Code — то самое место.",
+    "code":    "Хочешь инструкцию по установке Claude Code — то самое место.",
+    "promts":  "Забираешь 7 промптов для бизнеса — держи.",
+    "prof":    "Разбор 5 профессий 2027 — забирай.",
+    "5":       "Разбор 5 профессий 2027 — забирай.",
+    "montaj":  "Хочешь инструкцию по автомонтажу — сейчас всё будет.",
+    "montage": "Хочешь инструкцию по автомонтажу — сейчас всё будет.",
+    "claude":  "Хочешь гайд по Claude — держи.",
+}
+
+WELCOME_OUTRO = (
+    "Материал лежит в моём канале — там я выкладываю все инструкции и разборы, "
+    "чтобы они не терялись.\n\n"
+    "Подпишись и жми кнопку ниже — открою доступ."
 )
+
+
+def build_welcome_text(keyword: str) -> str:
+    parts = [WELCOME_INTRO]
+    line = WELCOME_LINES.get(keyword)
+    if line:
+        parts.append(line)
+    parts.append(WELCOME_OUTRO)
+    return "\n\n".join(parts)
 
 FOLLOWUP_TEXT = (
     "Кстати, пока ты тут 👀\n\n"
@@ -36,27 +62,47 @@ FOLLOWUP_KEYBOARD = InlineKeyboardMarkup([
     [InlineKeyboardButton("Собрать ИИ-сотрудника", url="https://aiworkercont.vercel.app/")]
 ])
 
-BUTTON_LABELS = {
-    "gaid":   "Установка Claude Code",
-    "start":  "Установка Claude Code",
-    "kod":    "Установка Claude Code",
-    "5":      "5 фишек для профи",
-    "prof":   "5 фишек для профи",
-    "claude": "Гайд по Claude",
-    "omni":   "Omni-режим",
-    "montaj": "Монтаж видео",
+COURSE_URL = "https://aiworkercont.vercel.app/"
+
+GUIDE_MENU_ITEMS = [
+    ("kod",    "⚙️ Установка Claude Code с нуля"),
+    ("montaj", "🎬 Автомонтаж: субтитры и биролы"),
+    ("omni",   "🪄 Omni: меняю фон и одежду в видео"),
+    ("prof",   "📈 5 профессий 2027 года"),
+]
+
+MATERIAL_INTROS = {
+    "kod":     "Твоя инструкция по установке Claude Code",
+    "gaid":    "Твоя инструкция по установке Claude Code",
+    "start":   "Твоя инструкция по установке Claude Code",
+    "code":    "Твоя инструкция по установке Claude Code",
+    "montaj":  "Твоя инструкция по автомонтажу",
+    "montage": "Твоя инструкция по автомонтажу",
+    "omni":    "Твоя инструкция по Omni",
+    "claude":  "Твой гайд по Claude",
+    "prof":    "Твой разбор 5 профессий 2027",
+    "5":       "Твой разбор 5 профессий 2027",
+    "promts":  "Твои 7 промптов для бизнеса",
 }
 
-MORE_GUIDES = {
-    "gaid":   ["omni", "claude", "montaj"],
-    "start":  ["omni", "claude", "montaj"],
-    "kod":    ["omni", "claude", "montaj"],
-    "5":      ["omni", "montaj", "kod"],
-    "prof":   ["omni", "montaj", "kod"],
-    "claude": ["prof", "omni", "montaj"],
-    "omni":   ["montaj", "prof", "claude"],
-    "montaj": ["omni", "prof", "claude"],
-}
+NO_PARAM_WELCOME = (
+    "Привет! Я бот Оксаны Прохоровой.\n\n"
+    "Оксана — экономист, не программист. Собирает ИИ-агентов и сервисы без кода "
+    "и учит тому же. Спикер Сколково.\n\n"
+    "Здесь лежат её бесплатные гайды. Выбирай, что тебе ближе:"
+)
+
+MORE_GUIDES_TEXT = "У меня есть ещё. Всё бесплатно, забирай что нужно:"
+
+NOT_SUBSCRIBED_TEXT = (
+    "Пока не вижу тебя в канале. Загляни туда, нажми «Присоединиться» "
+    "и возвращайся — кнопка на месте."
+)
+
+CONTENT_TAIL = (
+    "Сохрани пост в закладки, чтобы не искать. И попробуй на своём видео сегодня — "
+    "пока горячо, иначе отложится на «потом» и не вернётся."
+)
 
 logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(message)s",
@@ -119,13 +165,20 @@ async def notify_owner(bot, user, keyword: str, subscribed: bool, got_content: b
         pass
 
 
-def more_guides_keyboard(current_keyword: str) -> InlineKeyboardMarkup | None:
-    others = MORE_GUIDES.get(current_keyword)
-    if not others:
-        return None
+def guides_menu_keyboard(callback_prefix: str, include_course: bool = False) -> InlineKeyboardMarkup:
+    rows = [
+        [InlineKeyboardButton(label, callback_data=f"{callback_prefix}_{k}")]
+        for k, label in GUIDE_MENU_ITEMS
+    ]
+    if include_course:
+        rows.append([InlineKeyboardButton("Мне интересен мини-курс", url=COURSE_URL)])
+    return InlineKeyboardMarkup(rows)
+
+
+def after_content_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton(BUTTON_LABELS[k], callback_data=f"guide_{k}")]
-        for k in others
+        [InlineKeyboardButton("Забрать ещё гайды", callback_data="more_guides")],
+        [InlineKeyboardButton("Что за мини-курс?", url=COURSE_URL)],
     ])
 
 
@@ -135,11 +188,13 @@ async def send_content(message, keyword: str):
         await message.reply_text("Не знаю такого кодового слова.")
         return
 
-    await message.reply_text(f"Держи материал 👉 {link}")
-
-    keyboard = more_guides_keyboard(keyword)
-    if keyboard:
-        await message.reply_text("Забери ещё 3 гайда 👇", reply_markup=keyboard)
+    intro = MATERIAL_INTROS.get(keyword, "Твой материал")
+    text = (
+        f"Готово, доступ открыт 🔓\n\n"
+        f"{intro}: {link}\n\n"
+        f"{CONTENT_TAIL}"
+    )
+    await message.reply_text(text, reply_markup=after_content_keyboard())
 
 
 async def send_followup(bot, chat_id: int):
@@ -158,12 +213,38 @@ def subscription_keyboard(keyword: str) -> InlineKeyboardMarkup:
     ])
 
 
+def retry_check_keyboard(keyword: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("Подписаться на канал 👇", url="https://t.me/neirogide")],
+        [InlineKeyboardButton("Проверить снова", callback_data=f"check_{keyword}")],
+    ])
+
+
+async def deliver_or_prompt(message, user, keyword: str, bot, is_first_visit: bool):
+    subscribed = await is_subscribed(user.id, bot)
+
+    if subscribed:
+        await send_content(message, keyword)
+        await notify_owner(bot, user, keyword, subscribed=True, got_content=True)
+        if is_first_visit:
+            asyncio.create_task(send_followup(bot, message.chat.id))
+    else:
+        await message.reply_text(
+            build_welcome_text(keyword),
+            reply_markup=subscription_keyboard(keyword)
+        )
+        await notify_owner(bot, user, keyword, subscribed=False, got_content=False)
+
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     args = context.args
     user = update.effective_user
 
     if not args:
-        await update.message.reply_text("Привет! Перейди по ссылке из Instagram, чтобы получить материал.")
+        await update.message.reply_text(
+            NO_PARAM_WELCOME,
+            reply_markup=guides_menu_keyboard(callback_prefix="pick")
+        )
         return
 
     keyword = args[0].lower()
@@ -173,25 +254,28 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     is_first_visit = user.id not in seen_users
-
     if is_first_visit:
-        await update.message.reply_text(WELCOME_TEXT)
         seen_users.add(user.id)
         save_seen_users(seen_users)
 
-    subscribed = await is_subscribed(user.id, context.bot)
+    await deliver_or_prompt(update.message, user, keyword, context.bot, is_first_visit)
 
-    if subscribed:
-        await send_content(update.message, keyword)
-        await notify_owner(context.bot, user, keyword, subscribed=True, got_content=True)
-        if is_first_visit:
-            asyncio.create_task(send_followup(context.bot, update.effective_chat.id))
-    else:
-        await update.message.reply_text(
-            "Чтобы получить материал — подпишись на канал и нажми кнопку ниже 👇",
-            reply_markup=subscription_keyboard(keyword)
-        )
-        await notify_owner(context.bot, user, keyword, subscribed=False, got_content=False)
+
+async def pick_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    keyword = query.data.replace("pick_", "")
+    if keyword not in KEYWORDS:
+        return
+
+    user = query.from_user
+    is_first_visit = user.id not in seen_users
+    if is_first_visit:
+        seen_users.add(user.id)
+        save_seen_users(seen_users)
+
+    await deliver_or_prompt(query.message, user, keyword, context.bot, is_first_visit)
 
 
 async def check_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -202,12 +286,33 @@ async def check_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = query.from_user
 
     if await is_subscribed(user.id, context.bot):
-        await query.message.delete()
+        try:
+            await query.message.delete()
+        except TelegramError:
+            pass
         await send_content(query.message, keyword)
         await notify_owner(context.bot, user, keyword, subscribed=True, got_content=True)
         asyncio.create_task(send_followup(context.bot, query.message.chat.id))
     else:
-        await query.answer("Ты ещё не подписался на канал 😔", show_alert=True)
+        try:
+            await query.edit_message_text(
+                NOT_SUBSCRIBED_TEXT,
+                reply_markup=retry_check_keyboard(keyword)
+            )
+        except TelegramError:
+            await query.message.reply_text(
+                NOT_SUBSCRIBED_TEXT,
+                reply_markup=retry_check_keyboard(keyword)
+            )
+
+
+async def more_guides_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    await query.message.reply_text(
+        MORE_GUIDES_TEXT,
+        reply_markup=guides_menu_keyboard(callback_prefix="guide", include_course=True)
+    )
 
 
 async def guide_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -215,7 +320,13 @@ async def guide_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
 
     keyword = query.data.replace("guide_", "")
-    await send_content(query.message, keyword)
+    link = KEYWORDS.get(keyword)
+    if not link:
+        return
+
+    await query.message.reply_text(
+        f"Держи: {link}\n\nЗабирай ещё, если что-то приглянулось 👆"
+    )
     await notify_owner(context.bot, query.from_user, keyword, subscribed=True, got_content=True)
 
 
@@ -251,6 +362,8 @@ async def main():
     app = ApplicationBuilder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(check_button, pattern=r"^check_"))
+    app.add_handler(CallbackQueryHandler(pick_button, pattern=r"^pick_"))
+    app.add_handler(CallbackQueryHandler(more_guides_button, pattern=r"^more_guides$"))
     app.add_handler(CallbackQueryHandler(guide_button, pattern=r"^guide_"))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, forward_to_owner))
 
