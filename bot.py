@@ -126,6 +126,14 @@ DAY_FU_RESPONSES = {
     "notyet": "Оставь себе 15 минут вечером. Реально столько и нужно.",
 }
 
+SERVICE_KEYWORDS = {
+    "oplata": {
+        "text": "Лови ссылку на сервис 👇",
+        "button_label": "Ловлю",
+        "button_url": "https://t.me/zarub_robot?start=ref_NNimMH",
+    },
+}
+
 logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(message)s",
     level=logging.INFO
@@ -202,6 +210,14 @@ def after_content_keyboard() -> InlineKeyboardMarkup:
         [InlineKeyboardButton("Забрать ещё гайды", callback_data="more_guides")],
         [InlineKeyboardButton("Что за мини-курс?", url=COURSE_URL)],
     ])
+
+
+async def send_service(message, keyword: str):
+    cfg = SERVICE_KEYWORDS[keyword]
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton(cfg["button_label"], url=cfg["button_url"])]
+    ])
+    await message.reply_text(cfg["text"], reply_markup=kb)
 
 
 async def send_content(message, keyword: str):
@@ -295,6 +311,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     keyword = args[0].lower()
+
+    if keyword in SERVICE_KEYWORDS:
+        await send_service(update.message, keyword)
+        await notify_owner(context.bot, user, keyword, subscribed=True, got_content=True)
+        return
 
     if keyword not in KEYWORDS:
         await update.message.reply_text("Не знаю такого кодового слова.")
