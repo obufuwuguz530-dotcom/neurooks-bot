@@ -1,4 +1,7 @@
 .env
 seen_users.json
+replies_map.json
 __pycache__/
 *.pyc
+venv/
+
