@@ -132,6 +132,11 @@ SERVICE_KEYWORDS = {
         "button_label": "Ловлю",
         "button_url": "https://t.me/zarub_robot?start=ref_NNimMH",
     },
+    "platforma": {
+        "text": "Лови ссылку на платформу 👇",
+        "button_label": "Открыть",
+        "button_url": "https://clck.ru/3V4hGJ",
+    },
 }
 
 KEYWORD_ALIASES = {
@@ -147,12 +152,13 @@ KEYWORD_ALIASES = {
     "промпты":      "promts",
     "промты":       "promts",
     "оплата":       "oplata",
+    "платформа":    "platforma",
 }
 
 
 UNKNOWN_KEYWORD_TEXT = (
     "Не узнала слово. Могу выдать материал — напиши: "
-    "омни, код, монтаж, клод, профессии или оплата.\n\n"
+    "омни, код, монтаж, клод, профессии, оплата или платформа.\n\n"
     "Или напиши что-то своё — передам Оксане."
 )
 
