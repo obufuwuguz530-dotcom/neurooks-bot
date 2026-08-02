@@ -134,6 +134,37 @@ SERVICE_KEYWORDS = {
     },
 }
 
+KEYWORD_ALIASES = {
+    "омни":         "omni",
+    "код":          "kod",
+    "клод":         "claude",
+    "клауд":        "claude",
+    "клауде":       "claude",
+    "монтаж":       "montaj",
+    "автомонтаж":   "montaj",
+    "профессии":    "prof",
+    "5 профессий":  "prof",
+    "промпты":      "promts",
+    "промты":       "promts",
+    "оплата":       "oplata",
+}
+
+
+UNKNOWN_KEYWORD_TEXT = (
+    "Не узнала слово. Могу выдать материал — напиши: "
+    "омни, код, монтаж, клод, профессии или оплата.\n\n"
+    "Или напиши что-то своё — передам Оксане."
+)
+
+
+def resolve_keyword(text: str) -> str | None:
+    normalized = text.strip().strip(".,!?").lower()
+    if not normalized:
+        return None
+    if normalized in KEYWORDS or normalized in SERVICE_KEYWORDS:
+        return normalized
+    return KEYWORD_ALIASES.get(normalized)
+
 logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(message)s",
     level=logging.INFO
@@ -426,6 +457,21 @@ async def forward_to_owner(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except TelegramError:
                 await update.message.reply_text("❌ Не удалось отправить ответ")
         return
+
+    keyword = resolve_keyword(update.message.text or "")
+    if keyword:
+        if keyword in SERVICE_KEYWORDS:
+            await send_service(update.message, keyword)
+            await notify_owner(context.bot, user, keyword, subscribed=True, got_content=True)
+            return
+        is_first_visit = user.id not in seen_users
+        if is_first_visit:
+            seen_users.add(user.id)
+            save_seen_users(seen_users)
+        await deliver_or_prompt(update.message, user, keyword, context.bot, is_first_visit)
+        return
+
+    await update.message.reply_text(UNKNOWN_KEYWORD_TEXT)
 
     username = f"@{user.username}" if user.username else f"{user.first_name} (id: {user.id})"
     text = f"💬 Сообщение от {username}:\n\n{update.message.text}\n\n_(Ответь на это сообщение, чтобы написать пользователю)_"
