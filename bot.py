@@ -446,7 +446,7 @@ async def day_followup_button(update: Update, context: ContextTypes.DEFAULT_TYPE
 async def forward_to_owner(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
 
-    # Если пишет владелец — проверяем, не ответ ли это на чужое сообщение
+    # Если пишет владелец и это ответ на пересланное сообщение — отправляем ответ пользователю
     if user.id == OWNER_ID:
         reply = update.message.reply_to_message
         if reply and reply.message_id in replies_map:
@@ -456,7 +456,7 @@ async def forward_to_owner(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text("✅ Ответ отправлен")
             except TelegramError:
                 await update.message.reply_text("❌ Не удалось отправить ответ")
-        return
+            return
 
     keyword = resolve_keyword(update.message.text or "")
     if keyword:
@@ -469,6 +469,9 @@ async def forward_to_owner(update: Update, context: ContextTypes.DEFAULT_TYPE):
             seen_users.add(user.id)
             save_seen_users(seen_users)
         await deliver_or_prompt(update.message, user, keyword, context.bot, is_first_visit)
+        return
+
+    if user.id == OWNER_ID:
         return
 
     await update.message.reply_text(UNKNOWN_KEYWORD_TEXT)
