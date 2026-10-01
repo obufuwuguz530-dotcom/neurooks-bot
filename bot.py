@@ -1,5 +1,6 @@
 import os
 import json
+import time
 import asyncio
 import logging
 from datetime import datetime
@@ -14,8 +15,11 @@ load_dotenv()
 TOKEN = os.getenv("BOT_TOKEN")
 CHANNEL = "@neirogide"
 OWNER_ID = 415652620
-SEEN_USERS_FILE = "seen_users.json"
-REPLIES_FILE = "replies_map.json"
+# На Amvera постоянный диск смонтирован в /data — файлы там переживают перезапуск
+DATA_DIR = os.getenv("DATA_DIR") or ("/data" if os.path.isdir("/data") else ".")
+SEEN_USERS_FILE = os.path.join(DATA_DIR, "seen_users.json")
+REPLIES_FILE = os.path.join(DATA_DIR, "replies_map.json")
+PENDING_FILE = os.path.join(DATA_DIR, "pending_followups.json")
 DELAY_MINUTES = 40
 
 WELCOME_INTRO = "Привет! Я Смартик — заведую канцелярией ИИ и выдаю полезные материалы."
@@ -125,10 +129,21 @@ MATERIAL_SHORT = {
     "analiz":  "анализа",
 }
 
+DAY_FOLLOWUP_TEXT = (
+    "Привет! Ты вчера забирал(а) у меня гайд 🙂\n\n"
+    "Всё понятно? Если остались вопросы — я на связи 👇"
+)
+
 DAY_FU_RESPONSES = {
-    "ok":     "Круто! Скинь результат в личку @milakhweb — это ваши будущие отзывы 🙌",
-    "stuck":  "Напиши мне лично @milakhweb — разберёмся, я через это сама прошла.",
-    "notyet": "Оставь себе 15 минут вечером. Реально столько и нужно.",
+    "ok":     "Круто, рада, что пригодилось 🙌\n\nЕсли не сложно — напиши пару слов или скинь результат прямо сюда, мне будет очень приятно.",
+    "ask":    "Напиши свой вопрос прямо сюда, одним сообщением — передам Оксане, ответ придёт в этот чат.",
+    "notyet": "Ничего страшного, гайд никуда не денется 🙂\n\nКогда дойдут руки и появятся вопросы — пиши сюда, я на связи.",
+}
+
+DAY_FU_LABELS = {
+    "ok":     "Всё получилось 🙌",
+    "ask":    "Есть вопрос",
+    "notyet": "Ещё не успел(а)",
 }
 
 SERVICE_KEYWORDS = {
@@ -278,37 +293,74 @@ async def send_content(message, keyword: str):
     await message.reply_text(text, reply_markup=after_content_keyboard())
 
 
-async def send_followup(bot, chat_id: int):
-    await asyncio.sleep(DELAY_MINUTES * 60)
-    try:
-        await bot.send_message(
-            chat_id=chat_id,
-            text=FOLLOWUP_TEXT,
-            reply_markup=FOLLOWUP_KEYBOARD
-        )
-    except TelegramError:
-        pass
+# Отложенные сообщения хранятся в файле: {"<chat_id>": {"course": ts, "day": ts}}
+def load_pending() -> dict:
+    if os.path.exists(PENDING_FILE):
+        try:
+            with open(PENDING_FILE, "r") as f:
+                return json.load(f)
+        except (OSError, ValueError):
+            return {}
+    return {}
+
+
+def save_pending(p: dict):
+    with open(PENDING_FILE, "w") as f:
+        json.dump(p, f)
+
+
+pending = load_pending()
+
+
+def schedule(chat_id: int, kind: str, delay_seconds: int):
+    """Ставит отложенное сообщение. Если такое уже ждёт отправки — не дублирует."""
+    key = str(chat_id)
+    entry = pending.setdefault(key, {})
+    if kind in entry:
+        return
+    entry[kind] = time.time() + delay_seconds
+    save_pending(pending)
+
+
+def schedule_after_content(chat_id: int, with_course: bool):
+    schedule(chat_id, "day", DAY_FOLLOWUP_HOURS * 3600)
+    if with_course:
+        schedule(chat_id, "course", DELAY_MINUTES * 60)
 
 
 def day_followup_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("Получилось", callback_data="fu_ok")],
-        [InlineKeyboardButton("Застряла на установке", callback_data="fu_stuck")],
-        [InlineKeyboardButton("Ещё не пробовала", callback_data="fu_notyet")],
+        [InlineKeyboardButton(DAY_FU_LABELS[k], callback_data=f"fu_{k}")]
+        for k in ("ok", "ask", "notyet")
     ])
 
 
-async def send_day_followup(bot, chat_id: int, keyword: str):
-    await asyncio.sleep(DAY_FOLLOWUP_HOURS * 3600)
-    short = MATERIAL_SHORT.get(keyword, "материала")
-    try:
-        await bot.send_message(
-            chat_id=chat_id,
-            text=f"Ну как, дошли руки до {short}? 🙂",
-            reply_markup=day_followup_keyboard()
-        )
-    except TelegramError:
-        pass
+async def send_scheduled(bot, chat_id: int, kind: str):
+    if kind == "course":
+        await bot.send_message(chat_id=chat_id, text=FOLLOWUP_TEXT, reply_markup=FOLLOWUP_KEYBOARD)
+    elif kind == "day":
+        await bot.send_message(chat_id=chat_id, text=DAY_FOLLOWUP_TEXT, reply_markup=day_followup_keyboard())
+
+
+async def followup_loop(bot):
+    while True:
+        now = time.time()
+        changed = False
+        for key in list(pending.keys()):
+            entry = pending[key]
+            for kind in list(entry.keys()):
+                if entry[kind] <= now:
+                    try:
+                        await send_scheduled(bot, int(key), kind)
+                    except TelegramError as e:
+                        logging.warning("Не удалось отправить %s для %s: %s", kind, key, e)
+                    del entry[kind]
+                    changed = True
+            if not entry:
+                del pending[key]
+        if changed:
+            save_pending(pending)
+        await asyncio.sleep(60)
 
 
 def subscription_keyboard(keyword: str) -> InlineKeyboardMarkup:
@@ -331,9 +383,7 @@ async def deliver_or_prompt(message, user, keyword: str, bot, is_first_visit: bo
     if subscribed:
         await send_content(message, keyword)
         await notify_owner(bot, user, keyword, subscribed=True, got_content=True)
-        asyncio.create_task(send_day_followup(bot, message.chat.id, keyword))
-        if is_first_visit:
-            asyncio.create_task(send_followup(bot, message.chat.id))
+        schedule_after_content(message.chat.id, with_course=is_first_visit)
     else:
         await message.reply_text(
             build_welcome_text(keyword),
@@ -403,8 +453,7 @@ async def check_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             pass
         await send_content(query.message, keyword)
         await notify_owner(context.bot, user, keyword, subscribed=True, got_content=True)
-        asyncio.create_task(send_day_followup(context.bot, query.message.chat.id, keyword))
-        asyncio.create_task(send_followup(context.bot, query.message.chat.id))
+        schedule_after_content(query.message.chat.id, with_course=True)
     else:
         try:
             await query.edit_message_text(
@@ -440,7 +489,7 @@ async def guide_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Держи: {link}\n\nЗабирай ещё, если что-то приглянулось 👆"
     )
     await notify_owner(context.bot, query.from_user, keyword, subscribed=True, got_content=True)
-    asyncio.create_task(send_day_followup(context.bot, query.message.chat.id, keyword))
+    schedule_after_content(query.message.chat.id, with_course=False)
 
 
 async def day_followup_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -453,6 +502,20 @@ async def day_followup_button(update: Update, context: ContextTypes.DEFAULT_TYPE
         return
 
     await query.message.reply_text(response)
+
+    user = query.from_user
+    if action in ("ok", "ask"):
+        # следующее сообщение человека уйдёт Оксане без ответа «не узнала слово»
+        context.user_data["awaiting_owner_msg"] = action
+
+    username = f"@{user.username}" if user.username else f"{user.first_name} (id: {user.id})"
+    try:
+        await context.bot.send_message(
+            chat_id=OWNER_ID,
+            text=f"🔔 {username} ответил(а) на напоминание: «{DAY_FU_LABELS[action]}»"
+        )
+    except TelegramError:
+        pass
 
 
 async def forward_to_owner(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -486,12 +549,18 @@ async def forward_to_owner(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if user.id == OWNER_ID:
         return
 
-    await update.message.reply_text(UNKNOWN_KEYWORD_TEXT)
+    awaiting = context.user_data.pop("awaiting_owner_msg", None)
+    if awaiting:
+        await update.message.reply_text("Передала Оксане ✅ Ответ придёт сюда.")
+        header = "❓ Вопрос" if awaiting == "ask" else "💌 Отзыв"
+    else:
+        await update.message.reply_text(UNKNOWN_KEYWORD_TEXT)
+        header = "💬 Сообщение"
 
     username = f"@{user.username}" if user.username else f"{user.first_name} (id: {user.id})"
-    text = f"💬 Сообщение от {username}:\n\n{update.message.text}\n\n_(Ответь на это сообщение, чтобы написать пользователю)_"
+    text = f"{header} от {username}:\n\n{update.message.text}\n\n(Ответь на это сообщение реплаем — ответ уйдёт человеку)"
     try:
-        sent = await context.bot.send_message(chat_id=OWNER_ID, text=text, parse_mode="Markdown")
+        sent = await context.bot.send_message(chat_id=OWNER_ID, text=text)
         replies_map[sent.message_id] = update.effective_chat.id
         save_replies_map(replies_map)
     except TelegramError:
@@ -515,6 +584,7 @@ async def main():
     async with app:
         await app.start()
         await app.updater.start_polling()
+        asyncio.create_task(followup_loop(app.bot))
         await asyncio.Event().wait()
 
 
