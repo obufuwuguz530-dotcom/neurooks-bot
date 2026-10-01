@@ -16,4 +16,5 @@ KEYWORDS = {
     "5":       "https://t.me/neirogide/2065",
     "prof":    "https://t.me/neirogide/2065",
     "analiz":  "https://t.me/neirogide/2090",
+    "karta":   "https://t.me/neirogide/2161",
 }
